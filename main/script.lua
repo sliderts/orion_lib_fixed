@@ -7,6 +7,9 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
 
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
 local success, IconsJson = pcall(function()
     return HttpService:JSONDecode(HttpService:GetAsync("https://raw.githubusercontent.com/frappedevs/lucideblox/master/src/modules/util/icons.json"))
 end)
@@ -24,9 +27,9 @@ local Colors = {
 
 local NotificationHolder = Instance.new("ScreenGui")
 NotificationHolder.Name = "NotificationHolder"
-NotificationHolder.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+NotificationHolder.DisplayOrder = 999
 NotificationHolder.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-NotificationHolder.ResetOnSpawn = false
+NotificationHolder.Parent = PlayerGui
 
 function UltimateOrionLib:MakeNotification(options)
     local Title = options.Name or "Notification"
@@ -76,10 +79,11 @@ function UltimateOrionLib:MakeNotification(options)
     
     TweenService:Create(NotifFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(1, -320, 1, -100)}):Play()
     
-    task.delay(Time, function()
-        TweenService:Create(NotifFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(1, 320, 1, -100)}):Play()
-        task.delay(0.5, function() NotifFrame:Destroy() end)
-    end)
+    task.wait(Time)
+    
+    TweenService:Create(NotifFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(1, 320, 1, -100)}):Play()
+    task.wait(0.5)
+    NotifFrame:Destroy()
 end
 
 function UltimateOrionLib:MakeWindow(options)
@@ -92,9 +96,20 @@ function UltimateOrionLib:MakeWindow(options)
     
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "UltimateUI"
-    ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+    ScreenGui.DisplayOrder = 1000
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.ResetOnSpawn = false
+    ScreenGui.Parent = PlayerGui
+    
+    ScreenGui.AncestryChanged:Connect(function()
+        if not ScreenGui.Parent then
+            task.delay(1, function()
+                if not ScreenGui.Parent then
+                    ScreenGui.Parent = PlayerGui
+                end
+            end)
+        end
+    end)
     
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "Main"
