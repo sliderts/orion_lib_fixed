@@ -122,36 +122,35 @@ task.spawn(function()
 	end
 end)
 
--- Fixed dragging functionality
+-- Fixed dragging functionality (adapted from working OrionLib)
 local function AddDraggingFunctionality(DragPoint, Main)
-	local Dragging, DragInput, MousePos, FramePos = false
-	AddConnection(DragPoint.InputBegan, function(Input)
-		if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-			Dragging = true
-			MousePos = Input.Position
-			FramePos = Main.Position
-			DragInput = Input
-			-- Fixed end detection with temporary connection
-			local connectionEnd
-			connectionEnd = UserInputService.InputEnded:Connect(function(EndInput)
-				if EndInput.UserInputType == Enum.UserInputType.MouseButton1 then
-					Dragging = false
-					connectionEnd:Disconnect()
-				end
-			end)
-		end
-	end)
-	AddConnection(DragPoint.InputChanged, function(Input)
-		if Input.UserInputType == Enum.UserInputType.MouseMovement then
-			DragInput = Input
-		end
-	end)
-	AddConnection(UserInputService.InputChanged, function(Input)
-		if Input == DragInput and Dragging then
-			local Delta = Input.Position - MousePos
-			local NewPosition = UDim2.new(FramePos.X.Scale, FramePos.X.Offset + Delta.X, FramePos.Y.Scale, FramePos.Y.Offset + Delta.Y)
-			Main.Position = NewPosition
-		end
+	pcall(function()
+		local Dragging, DragInput, MousePos, FramePos = false
+		DragPoint.InputBegan:Connect(function(Input)
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+				Dragging = true
+				MousePos = Input.Position
+				FramePos = Main.Position
+				Input.Changed:Connect(function()
+					if Input.UserInputState == Enum.UserInputState.End then
+						Dragging = false
+					end
+				end)
+			end
+		end)
+		DragPoint.InputChanged:Connect(function(Input)
+			if Input.UserInputType == Enum.UserInputType.MouseMovement then
+				DragInput = Input
+			end
+		end)
+		UserInputService.InputChanged:Connect(function(Input)
+			if Input == DragInput and Dragging then
+				local Delta = Input.Position - MousePos
+				TweenService:Create(Main, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+					Position = UDim2.new(FramePos.X.Scale, FramePos.X.Offset + Delta.X, FramePos.Y.Scale, FramePos.Y.Offset + Delta.Y)
+				}):Play()
+			end
+		end)
 	end)
 end
 
@@ -666,22 +665,22 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			NineNexusLib.WindowVisible = true
 		end
 	end
-	-- Window Controls Events (fixed with MouseButton1Down + Up for reliability)
-	AddConnection(CloseBtn.MouseButton1Down, function()
+	-- Window Controls Events (adapted to MouseButton1Up like Orion)
+	AddConnection(CloseBtn.MouseButton1Up, function()
 		ToggleWindow()
 		WindowConfig.CloseCallback()
 	end)
-	-- Fixed minimize functionality
-	local function onMinimize()
+	-- Fixed minimize functionality (adapted)
+	AddConnection(MinimizeBtn.MouseButton1Up, function()
 		if Minimized then
 			TweenService:Create(MainWindow, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 				Size = UDim2.new(0, 700, 0, 400)
-			}):Play(function()
-				MainWindow.ClipsDescendants = false
-				WindowStuff.Visible = true
-				WindowTopBarLine.Visible = true
-			end)
+			}):Play()
 			MinimizeBtn.Ico.Image = GetIcon("minus")
+			task.wait(0.02)
+			MainWindow.ClipsDescendants = false
+			WindowStuff.Visible = true
+			WindowTopBarLine.Visible = true
 		else
 			MainWindow.ClipsDescendants = true
 			WindowTopBarLine.Visible = false
@@ -692,8 +691,7 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			}):Play()
 		end
 		Minimized = not Minimized
-	end
-	AddConnection(MinimizeBtn.MouseButton1Down, onMinimize)
+	end)
 	-- Global keybind for toggling (fixed with GameProcessedEvent check)
 	AddConnection(UserInputService.InputBegan, function(Input, GameProcessed)
 		if GameProcessed then return end
@@ -794,8 +792,8 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			TabFrame.Title.Font = Enum.Font.GothamBold
 			Container.Visible = true
 		end
-		-- Fixed tab switching
-		AddConnection(TabFrame.MouseButton1Down, function()
+		-- Fixed tab switching (use MouseButton1Click like Orion)
+		AddConnection(TabFrame.MouseButton1Click, function()
 			-- Reset all tabs
 			for _, Tab in ipairs(TabHolder:GetChildren()) do
 				if Tab:IsA("TextButton") and Tab ~= TabFrame then
@@ -949,24 +947,20 @@ function NineNexusLib:MakeWindow(WindowConfig)
 					Click
 				}), "Second")
 				AddConnection(Click.MouseEnter, function()
-					if ButtonFrame then
-						TweenService:Create(ButtonFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-							BackgroundColor3 = Color3.fromRGB(
-								NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.R * 255 + 8,
-								NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.G * 255 + 8,
-								NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.B * 255 + 8
-							)
-						}):Play()
-					end
+					TweenService:Create(ButtonFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+						BackgroundColor3 = Color3.fromRGB(
+							NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.R * 255 + 8,
+							NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.G * 255 + 8,
+							NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.B * 255 + 8
+						)
+					}):Play()
 				end)
 				AddConnection(Click.MouseLeave, function()
-					if ButtonFrame then
-						TweenService:Create(ButtonFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-							BackgroundColor3 = NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second
-						}):Play()
-					end
+					TweenService:Create(ButtonFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+						BackgroundColor3 = NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second
+					}):Play()
 				end)
-				AddConnection(Click.MouseButton1Down, function()
+				AddConnection(Click.MouseButton1Up, function()
 					task.spawn(function()
 						ButtonConfig.Callback()
 					end)
@@ -1001,7 +995,7 @@ function NineNexusLib:MakeWindow(WindowConfig)
 						Transparency = 0.5
 					}),
 					SetProps(MakeElement("Image", GetIcon("check")), {
-						Size = UDim2.new(0, 16, 0, 16),  -- Fixed: always 16x16
+						Size = UDim2.new(0, 16, 0, 16),
 						AnchorPoint = Vector2.new(0.5, 0.5),
 						Position = UDim2.new(0.5, 0, 0.5, 0),
 						ImageColor3 = Color3.fromRGB(255, 255, 255),
@@ -1032,7 +1026,6 @@ function NineNexusLib:MakeWindow(WindowConfig)
 						TweenService:Create(ToggleBox.Stroke, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 							Color = Toggle.Value and ToggleConfig.Color or NineNexusLib.Themes.Default.Stroke
 						}):Play()
-						-- Fixed: only transparency, no size change
 						if ToggleBox.Ico then
 							TweenService:Create(ToggleBox.Ico, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 								ImageTransparency = Toggle.Value and 0 or 1
@@ -1060,7 +1053,7 @@ function NineNexusLib:MakeWindow(WindowConfig)
 						}):Play()
 					end
 				end)
-				AddConnection(Click.MouseButton1Down, function()
+				AddConnection(Click.MouseButton1Up, function()
 					Toggle:Set(not Toggle.Value)
 					if NineNexusLib.SaveCfg then
 						SaveCfg(game.GameId)
@@ -1071,7 +1064,7 @@ function NineNexusLib:MakeWindow(WindowConfig)
 				end
 				return Toggle
 			end
-			-- Fixed Slider Element
+			-- Fixed Slider Element (adapted from OrionLib)
 			function ElementFunction:AddSlider(SliderConfig)
 				SliderConfig = SliderConfig or {}
 				SliderConfig.Name = SliderConfig.Name or "Slider"
@@ -1091,13 +1084,13 @@ function NineNexusLib:MakeWindow(WindowConfig)
 					Parent = ItemParent
 				}), {
 					AddThemeObject(SetProps(MakeElement("Label", SliderConfig.Name, 14), {
-						Size = UDim2.new(1, -100, 0, 20),  -- Fixed alignment: narrower for title
+						Size = UDim2.new(1, -100, 0, 20),
 						Position = UDim2.new(0, 16, 0, 8),
 						Font = Enum.Font.GothamMedium,
 						Name = "Title"
 					}), "Text"),
 					AddThemeObject(SetProps(MakeElement("Label", tostring(SliderConfig.Default) .. SliderConfig.ValueName, 13), {
-						Size = UDim2.new(0, 80, 0, 20),  -- Fixed: fixed width, right-aligned
+						Size = UDim2.new(0, 80, 0, 20),
 						Position = UDim2.new(1, -80, 0, 8),
 						Font = Enum.Font.GothamMedium,
 						Name = "Value",
@@ -1105,7 +1098,7 @@ function NineNexusLib:MakeWindow(WindowConfig)
 					}), "TextDark"),
 					AddThemeObject(MakeElement("Stroke"), "Stroke")
 				}), "Second")
-				-- Slider Bar
+				-- Slider Bar (adapted)
 				local SliderBar = SetChildren(SetProps(MakeElement("RoundFrame", NineNexusLib.Themes.Default.Divider, 0, 4), {
 					Size = UDim2.new(1, -32, 0, 6),
 					Position = UDim2.new(0, 16, 1, -18),
@@ -1141,31 +1134,28 @@ function NineNexusLib:MakeWindow(WindowConfig)
 				function Slider:Set(Value)
 					UpdateSlider(Value)
 				end
-				-- Fixed dragging for slider
-				AddConnection(SliderBar.InputBegan, function(Input)
+				-- Fixed dragging for slider (adapted from Orion)
+				SliderBar.InputBegan:Connect(function(Input)
 					if Input.UserInputType == Enum.UserInputType.MouseButton1 then
 						Dragging = true
-						local function Update()
-							local MousePos = Mouse.X
-							local BarPos = SliderBar.AbsolutePosition.X
-							local BarSize = SliderBar.AbsoluteSize.X
-							local Percent = math.clamp((MousePos - BarPos) / BarSize, 0, 1)
-							local Value = SliderConfig.Min + (Percent * (SliderConfig.Max - SliderConfig.Min))
-							UpdateSlider(Value)
+					end
+				end)
+				SliderBar.InputEnded:Connect(function(Input)
+					if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+						Dragging = false
+						if NineNexusLib.SaveCfg then
+							SaveCfg(game.GameId)
 						end
-						Update()
-						local MoveConnection = AddConnection(Mouse.Move, Update)
-						local ReleaseConnection
-						ReleaseConnection = AddConnection(UserInputService.InputEnded, function(EndInput)
-							if EndInput.UserInputType == Enum.UserInputType.MouseButton1 then
-								Dragging = false
-								if MoveConnection then MoveConnection:Disconnect() end
-								if ReleaseConnection then ReleaseConnection:Disconnect() end
-								if NineNexusLib.SaveCfg then
-									SaveCfg(game.GameId)
-								end
-							end
-						end)
+					end
+				end)
+				UserInputService.InputChanged:Connect(function(Input)
+					if Dragging and Input.UserInputType == Enum.UserInputType.MouseMovement then
+						local MousePos = Input.Position.X
+						local BarPos = SliderBar.AbsolutePosition.X
+						local BarSize = SliderBar.AbsoluteSize.X
+						local Percent = math.clamp((MousePos - BarPos) / BarSize, 0, 1)
+						local Value = SliderConfig.Min + (Percent * (SliderConfig.Max - SliderConfig.Min))
+						UpdateSlider(Value)
 					end
 				end)
 				UpdateSlider(SliderConfig.Default)
@@ -1239,7 +1229,7 @@ function NineNexusLib:MakeWindow(WindowConfig)
 							Size = UDim2.new(1, 0, 1, 0)
 						})
 					}), "Divider")
-					AddConnection(OptionFrame.TextButton.MouseButton1Down, function()
+					AddConnection(OptionFrame.TextButton.MouseButton1Up, function()
 						if DropdownFrame and DropdownFrame.Selected then
 							Dropdown:Set(OptionText)
 						end
@@ -1291,7 +1281,7 @@ function NineNexusLib:MakeWindow(WindowConfig)
 						}):Play()
 					end
 				end
-				AddConnection(DropdownFrame.ClickDetector.MouseButton1Down, function()
+				AddConnection(DropdownFrame.ClickDetector.MouseButton1Up, function()
 					if Opened then
 						Dropdown:Close()
 					else
@@ -1408,9 +1398,8 @@ function NineNexusLib:MakeWindow(WindowConfig)
 					end
 					ColorpickerConfig.Callback(Color)
 				end
-				-- Simple color picker (you can expand this with a full color wheel)
-				AddConnection(ColorpickerFrame.Preview.TextButton.MouseButton1Down, function()
-					-- This is a simple implementation - you could add a full color picker GUI here
+				-- Simple color picker
+				AddConnection(ColorpickerFrame.Preview.TextButton.MouseButton1Up, function()
 					local RandomColor = Color3.fromRGB(math.random(0, 255), math.random(0, 255), math.random(0, 255))
 					Colorpicker:Set(RandomColor)
 					if NineNexusLib.SaveCfg then
@@ -1467,7 +1456,7 @@ function NineNexusLib:MakeWindow(WindowConfig)
 						KeybindFrame.KeyFrame.KeyLabel.Text = Key.Name
 					end
 				end
-				AddConnection(KeybindFrame.KeyFrame.TextButton.MouseButton1Down, function()
+				AddConnection(KeybindFrame.KeyFrame.TextButton.MouseButton1Up, function()
 					if WaitingForKey then return end
 					WaitingForKey = true
 					if KeybindFrame and KeybindFrame.KeyFrame and KeybindFrame.KeyFrame.KeyLabel then
@@ -1479,7 +1468,7 @@ function NineNexusLib:MakeWindow(WindowConfig)
 						if Input.UserInputType == Enum.UserInputType.Keyboard then
 							Keybind:Set(Input.KeyCode)
 							WaitingForKey = false
-							if Connection then Connection:Disconnect() end
+							Connection:Disconnect()
 							if NineNexusLib.SaveCfg then
 								SaveCfg(game.GameId)
 							end
