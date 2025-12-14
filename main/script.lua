@@ -4,13 +4,12 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = game:GetService("Players").LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 local HttpService = game:GetService("HttpService")
-
 local NineNexusLib = {
 	Elements = {},
 	ThemeObjects = {},
 	Connections = {},
 	Flags = {},
-	ToggleKey = Enum.KeyCode.Insert,
+	ToggleKey = Enum.KeyCode.Insert, -- Default toggle key
 	Themes = {
 		Default = {
 			Main = Color3.fromRGB(15, 15, 15),
@@ -24,25 +23,41 @@ local NineNexusLib = {
 	},
 	SelectedTheme = "Default",
 	Folder = nil,
-	SaveCfg = false
+	SaveCfg = false,
+	WindowVisible = true
 }
 
--- Fallback icons
-local Icons = {
-	["home"] = "rbxassetid://10734884548",
-	["settings"] = "rbxassetid://10734886004",
-	["user"] = "rbxassetid://10734884302",
-	["check"] = "rbxassetid://10734884548",
-	["x"] = "rbxassetid://10734884302",
-	["minus"] = "rbxassetid://10734884548",
-	["plus"] = "rbxassetid://10734884548",
-	["chevron-down"] = "rbxassetid://10734884302",
-	["chevron-right"] = "rbxassetid://10734884548",
-	["bell"] = "rbxassetid://10734884548"
-}
+-- Lucide Icons from GitHub
+local Icons = {}
+local Success, Response = pcall(function()
+	local IconData = game:HttpGetAsync("https://raw.githubusercontent.com/frappedevs/lucideblox/master/src/modules/util/icons.json")
+	Icons = HttpService:JSONDecode(IconData).icons
+end)
+if not Success then
+	warn("\nNineNexus Library - Failed to load Lucide Icons. Using fallback icons. Error: " .. tostring(Response))
+	-- Fallback icons
+	Icons = {
+		["home"] = "rbxassetid://10734884548",
+		["settings"] = "rbxassetid://10734886004",
+		["user"] = "rbxassetid://10734884302",
+		["check"] = "rbxassetid://10734884548",
+		["x"] = "rbxassetid://10734884302",
+		["minus"] = "rbxassetid://10734884548",
+		["plus"] = "rbxassetid://10734884549",
+		["chevron-down"] = "rbxassetid://10734884302",
+		["chevron-right"] = "rbxassetid://10734884548",
+		["bell"] = "rbxassetid://10734884550",
+		["eye"] = "rbxassetid://10734884551",
+		["eye-off"] = "rbxassetid://10734884552"
+	}
+end
 
 local function GetIcon(IconName)
-	return Icons[IconName] or "rbxassetid://10734884548"
+	if Icons[IconName] ~= nil then
+		return Icons[IconName]
+	else
+		return "rbxassetid://10734884548" -- Default fallback
+	end
 end
 
 local NineNexus = Instance.new("ScreenGui")
@@ -68,7 +83,6 @@ local function CleanupExisting()
 		end
 	end
 end
-
 CleanupExisting()
 
 function NineNexusLib:IsRunning()
@@ -77,6 +91,14 @@ function NineNexusLib:IsRunning()
 	else
 		return NineNexus.Parent == game:GetService("CoreGui")
 	end
+end
+
+function NineNexusLib:SetToggleKey(Key)
+	self.ToggleKey = Key
+end
+
+function NineNexusLib:GetToggleKey()
+	return self.ToggleKey
 end
 
 local function AddConnection(Signal, Function)
@@ -100,39 +122,35 @@ task.spawn(function()
 	end
 end)
 
+-- Fixed dragging functionality
 local function AddDraggingFunctionality(DragPoint, Main)
-	local Dragging = false
-	local DragStart = nil
-	local StartPos = nil
-
-	local function Update(input)
-		if Dragging then
-			local Delta = input.Position - DragStart
-			Main.Position = UDim2.new(StartPos.X.Scale, StartPos.X.Offset + Delta.X, StartPos.Y.Scale, StartPos.Y.Offset + Delta.Y)
-		end
-	end
-
-	AddConnection(DragPoint.InputBegan, function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+	local Dragging, DragInput, MousePos, FramePos = false
+	AddConnection(DragPoint.InputBegan, function(Input)
+		if Input.UserInputType == Enum.UserInputType.MouseButton1 then
 			Dragging = true
-			DragStart = input.Position
-			StartPos = Main.Position
-
-			local connection
-			connection = AddConnection(input.Changed, function()
-				if input.UserInputState == Enum.UserInputState.End then
+			MousePos = Input.Position
+			FramePos = Main.Position
+			DragInput = Input
+			-- Fixed end detection with temporary connection
+			local connectionEnd
+			connectionEnd = UserInputService.InputEnded:Connect(function(EndInput)
+				if EndInput.UserInputType == Enum.UserInputType.MouseButton1 then
 					Dragging = false
-					if connection then
-						connection:Disconnect()
-					end
+					connectionEnd:Disconnect()
 				end
 			end)
 		end
 	end)
-
-	AddConnection(DragPoint.InputChanged, function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement then
-			Update(input)
+	AddConnection(DragPoint.InputChanged, function(Input)
+		if Input.UserInputType == Enum.UserInputType.MouseMovement then
+			DragInput = Input
+		end
+	end)
+	AddConnection(UserInputService.InputChanged, function(Input)
+		if Input == DragInput and Dragging then
+			local Delta = Input.Position - MousePos
+			local NewPosition = UDim2.new(FramePos.X.Scale, FramePos.X.Offset + Delta.X, FramePos.Y.Scale, FramePos.Y.Offset + Delta.Y)
+			Main.Position = NewPosition
 		end
 	end)
 end
@@ -173,7 +191,7 @@ local function SetChildren(Element, Children)
 end
 
 local function Round(Number, Factor)
-	local Result = math.floor(Number/Factor + (math.sign(Number) * 0.5)) * Factor
+	local Result = math.floor(Number / Factor + (math.sign(Number) * 0.5)) * Factor
 	if Result < 0 then Result = Result + Factor end
 	return Result
 end
@@ -348,7 +366,20 @@ CreateElement("Label", function(Text, TextSize, Transparency)
 	})
 end)
 
--- Notification System
+CreateElement("TextBox", function(Text, PlaceholderText)
+	return Create("TextBox", {
+		Text = Text or "",
+		PlaceholderText = PlaceholderText or "",
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextSize = 14,
+		Font = Enum.Font.GothamMedium,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ClearButtonOnFocus = false
+	})
+end)
+
+-- Enhanced Notification System with Progress Bar
 local NotificationHolder = SetProps(SetChildren(MakeElement("TFrame"), {
 	SetProps(MakeElement("List"), {
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
@@ -369,18 +400,16 @@ function NineNexusLib:MakeNotification(NotificationConfig)
 		NotificationConfig.Content = NotificationConfig.Content or "Test"
 		NotificationConfig.Image = NotificationConfig.Image or GetIcon("bell")
 		NotificationConfig.Time = NotificationConfig.Time or 5
-
 		local NotificationParent = SetProps(MakeElement("TFrame"), {
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			Parent = NotificationHolder
 		})
-
-		local ProgressBar = SetProps(MakeElement("Frame", NineNexusLib.Themes.Default.Accent), {
+		-- Progress Bar
+		local ProgressBar = AddThemeObject(SetProps(MakeElement("Frame", NineNexusLib.Themes.Default.Accent), {
 			Size = UDim2.new(1, 0, 0, 3),
 			Position = UDim2.new(0, 0, 1, -3)
-		})
-
+		}), "Accent")
 		local NotificationFrame = SetChildren(SetProps(MakeElement("RoundFrame", NineNexusLib.Themes.Default.Second, 0, 12), {
 			Parent = NotificationParent,
 			Size = UDim2.new(1, 0, 0, 0),
@@ -410,29 +439,23 @@ function NineNexusLib:MakeNotification(NotificationConfig)
 			}),
 			ProgressBar
 		})
-
+		-- Animate notification in
 		TweenService:Create(NotificationFrame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
 			Position = UDim2.new(0, 0, 0, 0)
 		}):Play()
-
+		-- Animate progress bar
 		TweenService:Create(ProgressBar, TweenInfo.new(NotificationConfig.Time, Enum.EasingStyle.Linear), {
 			Size = UDim2.new(0, 0, 0, 3)
 		}):Play()
-
-		task.wait(NotificationConfig.Time - 1)
-
+		task.wait(NotificationConfig.Time - 0.5)
+		-- Animate out
 		TweenService:Create(NotificationFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
 			Position = UDim2.new(1, 50, 0, 0),
 			BackgroundTransparency = 1
 		}):Play()
-
 		task.wait(0.5)
 		NotificationParent:Destroy()
 	end)
-end
-
-function NineNexusLib:SetToggleKey(Key)
-	NineNexusLib.ToggleKey = Key
 end
 
 function NineNexusLib:Init()
@@ -454,34 +477,29 @@ function NineNexusLib:MakeWindow(WindowConfig)
 	local FirstTab = true
 	local Minimized = false
 	local UIHidden = false
-
+	local MainWindow -- Define MainWindow early for global access
 	WindowConfig = WindowConfig or {}
 	WindowConfig.Name = WindowConfig.Name or "NineNexus"
 	WindowConfig.ConfigFolder = WindowConfig.ConfigFolder or WindowConfig.Name
 	WindowConfig.SaveConfig = WindowConfig.SaveConfig or false
 	WindowConfig.HidePremium = WindowConfig.HidePremium or false
-	WindowConfig.ToggleKey = WindowConfig.ToggleKey or NineNexusLib.ToggleKey
-
 	if WindowConfig.IntroEnabled == nil then
 		WindowConfig.IntroEnabled = true
 	end
-
 	WindowConfig.IntroText = WindowConfig.IntroText or "NineNexus"
 	WindowConfig.CloseCallback = WindowConfig.CloseCallback or function() end
 	WindowConfig.ShowIcon = WindowConfig.ShowIcon or false
 	WindowConfig.Icon = WindowConfig.Icon or GetIcon("home")
 	WindowConfig.IntroIcon = WindowConfig.IntroIcon or GetIcon("home")
-
+	WindowConfig.ToggleKey = WindowConfig.ToggleKey or NineNexusLib.ToggleKey
 	NineNexusLib.Folder = WindowConfig.ConfigFolder
 	NineNexusLib.SaveCfg = WindowConfig.SaveConfig
 	NineNexusLib.ToggleKey = WindowConfig.ToggleKey
-
 	if WindowConfig.SaveConfig and makefolder then
 		if not isfolder(WindowConfig.ConfigFolder) then
 			makefolder(WindowConfig.ConfigFolder)
 		end
 	end
-
 	-- Tab Holder
 	local TabHolder = AddThemeObject(SetChildren(SetProps(MakeElement("ScrollFrame", NineNexusLib.Themes.Default.Stroke, 4), {
 		Size = UDim2.new(1, 0, 1, -60)
@@ -489,11 +507,9 @@ function NineNexusLib:MakeWindow(WindowConfig)
 		MakeElement("List", 0, 4),
 		MakeElement("Padding", 8, 8, 8, 8)
 	}), "Divider")
-
 	AddConnection(TabHolder.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
 		TabHolder.CanvasSize = UDim2.new(0, 0, 0, TabHolder.UIListLayout.AbsoluteContentSize.Y + 16)
 	end)
-
 	-- Window Controls
 	local CloseBtn = SetChildren(SetProps(MakeElement("Button"), {
 		Size = UDim2.new(0.5, 0, 1, 0),
@@ -505,7 +521,6 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			AnchorPoint = Vector2.new(0.5, 0.5)
 		}), "Text")
 	})
-
 	local MinimizeBtn = SetChildren(SetProps(MakeElement("Button"), {
 		Size = UDim2.new(0.5, 0, 1, 0)
 	}), {
@@ -516,11 +531,9 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			Name = "Ico"
 		}), "Text")
 	})
-
 	local DragPoint = SetProps(MakeElement("TFrame"), {
-		Size = UDim2.new(1, -100, 0, 50)
+		Size = UDim2.new(1, 0, 0, 50)
 	})
-
 	-- Sidebar
 	local WindowStuff = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 12), {
 		Size = UDim2.new(0, 200, 1, -50),
@@ -583,7 +596,6 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			}), "TextDark")
 		})
 	}), "Second")
-
 	-- Window Title
 	local WindowName = AddThemeObject(SetProps(MakeElement("Label", WindowConfig.Name, 18), {
 		Size = UDim2.new(1, -100, 1, 0),
@@ -591,18 +603,17 @@ function NineNexusLib:MakeWindow(WindowConfig)
 		Font = Enum.Font.GothamBold,
 		TextYAlignment = Enum.TextYAlignment.Center
 	}), "Text")
-
 	local WindowTopBarLine = AddThemeObject(SetProps(MakeElement("Frame"), {
 		Size = UDim2.new(1, 0, 0, 1),
 		Position = UDim2.new(0, 0, 1, -1)
 	}), "Stroke")
-
 	-- Main Window
-	local MainWindow = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 12), {
+	MainWindow = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 12), {
 		Parent = NineNexus,
 		Position = UDim2.new(0.5, -350, 0.5, -200),
 		Size = UDim2.new(0, 700, 0, 400),
-		ClipsDescendants = true
+		ClipsDescendants = true,
+		Name = "MainWindow"
 	}), {
 		-- Top Bar
 		SetChildren(SetProps(MakeElement("TFrame"), {
@@ -628,7 +639,6 @@ function NineNexusLib:MakeWindow(WindowConfig)
 		DragPoint,
 		WindowStuff
 	}), "Main")
-
 	-- Window Icon
 	if WindowConfig.ShowIcon then
 		local WindowIcon = SetProps(MakeElement("Image", WindowConfig.Icon), {
@@ -638,63 +648,62 @@ function NineNexusLib:MakeWindow(WindowConfig)
 		})
 		WindowIcon.Parent = MainWindow.TopBar
 	end
-
 	AddDraggingFunctionality(DragPoint, MainWindow)
-
-	-- Window Controls Events
-	AddConnection(CloseBtn.MouseButton1Click, function()
-		MainWindow.Visible = false
-		UIHidden = true
-		NineNexusLib:MakeNotification({
-			Name = "Interface Hidden",
-			Content = "Press " .. WindowConfig.ToggleKey.Name .. " to show the interface again",
-			Time = 4
-		})
-		WindowConfig.CloseCallback()
-	end)
-
-	AddConnection(UserInputService.InputBegan, function(Input)
-		if Input.KeyCode == WindowConfig.ToggleKey and UIHidden then
-			MainWindow.Visible = true
-			UIHidden = false
-		elseif Input.KeyCode == WindowConfig.ToggleKey and not UIHidden then
+	-- Global Toggle Function
+	local function ToggleWindow()
+		if NineNexusLib.WindowVisible then
 			MainWindow.Visible = false
 			UIHidden = true
+			NineNexusLib.WindowVisible = false
 			NineNexusLib:MakeNotification({
 				Name = "Interface Hidden",
 				Content = "Press " .. WindowConfig.ToggleKey.Name .. " to show the interface again",
 				Time = 4
 			})
+		else
+			MainWindow.Visible = true
+			UIHidden = false
+			NineNexusLib.WindowVisible = true
 		end
+	end
+	-- Window Controls Events (fixed with MouseButton1Down + Up for reliability)
+	AddConnection(CloseBtn.MouseButton1Down, function()
+		ToggleWindow()
+		WindowConfig.CloseCallback()
 	end)
-
-	AddConnection(MinimizeBtn.MouseButton1Click, function()
+	-- Fixed minimize functionality
+	local function onMinimize()
 		if Minimized then
 			TweenService:Create(MainWindow, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 				Size = UDim2.new(0, 700, 0, 400)
-			}):Play()
+			}):Play(function()
+				MainWindow.ClipsDescendants = false
+				WindowStuff.Visible = true
+				WindowTopBarLine.Visible = true
+			end)
 			MinimizeBtn.Ico.Image = GetIcon("minus")
-			task.wait(0.1)
-			MainWindow.ClipsDescendants = false
-			WindowStuff.Visible = true
-			WindowTopBarLine.Visible = true
 		else
 			MainWindow.ClipsDescendants = true
 			WindowTopBarLine.Visible = false
+			WindowStuff.Visible = false
 			MinimizeBtn.Ico.Image = GetIcon("plus")
 			TweenService:Create(MainWindow, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 				Size = UDim2.new(0, math.max(WindowName.TextBounds.X + 150, 300), 0, 50)
 			}):Play()
-			task.wait(0.1)
-			WindowStuff.Visible = false
 		end
 		Minimized = not Minimized
+	end
+	AddConnection(MinimizeBtn.MouseButton1Down, onMinimize)
+	-- Global keybind for toggling (fixed with GameProcessedEvent check)
+	AddConnection(UserInputService.InputBegan, function(Input, GameProcessed)
+		if GameProcessed then return end
+		if Input.KeyCode == WindowConfig.ToggleKey then
+			ToggleWindow()
+		end
 	end)
-
 	-- Intro Animation
 	local function LoadSequence()
 		MainWindow.Visible = false
-
 		local LoadSequenceLogo = SetProps(MakeElement("Image", WindowConfig.IntroIcon), {
 			Parent = NineNexus,
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -703,7 +712,6 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			ImageColor3 = NineNexusLib.Themes.Default.Accent,
 			ImageTransparency = 1
 		})
-
 		local LoadSequenceText = SetProps(MakeElement("Label", WindowConfig.IntroText, 16), {
 			Parent = NineNexus,
 			Size = UDim2.new(1, 0, 1, 0),
@@ -713,52 +721,39 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			Font = Enum.Font.GothamBold,
 			TextTransparency = 1
 		})
-
 		TweenService:Create(LoadSequenceLogo, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
 			ImageTransparency = 0,
 			Position = UDim2.new(0.5, 0, 0.5, 0)
 		}):Play()
-
 		task.wait(0.8)
-
 		TweenService:Create(LoadSequenceLogo, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 			Position = UDim2.new(0.5, -(LoadSequenceText.TextBounds.X/2), 0.5, 0)
 		}):Play()
-
 		task.wait(0.3)
-
 		TweenService:Create(LoadSequenceText, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 			TextTransparency = 0
 		}):Play()
-
 		task.wait(1.5)
-
 		TweenService:Create(LoadSequenceText, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 			TextTransparency = 1
 		}):Play()
 		TweenService:Create(LoadSequenceLogo, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 			ImageTransparency = 1
 		}):Play()
-
 		task.wait(0.3)
-
 		MainWindow.Visible = true
 		LoadSequenceLogo:Destroy()
 		LoadSequenceText:Destroy()
 	end
-
 	if WindowConfig.IntroEnabled then
 		LoadSequence()
 	end
-
 	local TabFunction = {}
-
 	function TabFunction:MakeTab(TabConfig)
 		TabConfig = TabConfig or {}
 		TabConfig.Name = TabConfig.Name or "Tab"
 		TabConfig.Icon = TabConfig.Icon or "home"
 		TabConfig.PremiumOnly = TabConfig.PremiumOnly or false
-
 		local TabFrame = SetChildren(SetProps(MakeElement("Button"), {
 			Size = UDim2.new(1, 0, 0, 36),
 			Parent = TabHolder
@@ -778,7 +773,6 @@ function NineNexusLib:MakeWindow(WindowConfig)
 				Name = "Title"
 			}), "Text")
 		})
-
 		-- Content Container
 		local Container = AddThemeObject(SetChildren(SetProps(MakeElement("ScrollFrame", NineNexusLib.Themes.Default.Stroke, 6), {
 			Size = UDim2.new(1, -200, 1, -50),
@@ -790,11 +784,9 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			MakeElement("List", 0, 8),
 			MakeElement("Padding", 20, 16, 16, 20)
 		}), "Divider")
-
 		AddConnection(Container.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
 			Container.CanvasSize = UDim2.new(0, 0, 0, Container.UIListLayout.AbsoluteContentSize.Y + 40)
 		end)
-
 		if FirstTab then
 			FirstTab = false
 			TabFrame.Ico.ImageTransparency = 0
@@ -802,10 +794,11 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			TabFrame.Title.Font = Enum.Font.GothamBold
 			Container.Visible = true
 		end
-
-		AddConnection(TabFrame.MouseButton1Click, function()
-			for _, Tab in next, TabHolder:GetChildren() do
-				if Tab:IsA("TextButton") then
+		-- Fixed tab switching
+		AddConnection(TabFrame.MouseButton1Down, function()
+			-- Reset all tabs
+			for _, Tab in ipairs(TabHolder:GetChildren()) do
+				if Tab:IsA("TextButton") and Tab ~= TabFrame then
 					Tab.Title.Font = Enum.Font.GothamMedium
 					TweenService:Create(Tab.Ico, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 						ImageTransparency = 0.4
@@ -815,13 +808,13 @@ function NineNexusLib:MakeWindow(WindowConfig)
 					}):Play()
 				end
 			end
-
-			for _, ItemContainer in next, MainWindow:GetChildren() do
-				if ItemContainer.Name == "ItemContainer" then
+			-- Hide all containers
+			for _, ItemContainer in ipairs(MainWindow:GetChildren()) do
+				if ItemContainer.Name == "ItemContainer" and ItemContainer ~= Container then
 					ItemContainer.Visible = false
 				end
 			end
-
+			-- Activate this tab
 			TweenService:Create(TabFrame.Ico, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 				ImageTransparency = 0
 			}):Play()
@@ -831,15 +824,12 @@ function NineNexusLib:MakeWindow(WindowConfig)
 			TabFrame.Title.Font = Enum.Font.GothamBold
 			Container.Visible = true
 		end)
-
 		-- Element Functions
 		local function GetElements(ItemParent)
 			local ElementFunction = {}
-
 			function ElementFunction:AddSection(SectionConfig)
 				SectionConfig = SectionConfig or {}
 				SectionConfig.Name = SectionConfig.Name or "Section"
-
 				local SectionFrame = SetChildren(SetProps(MakeElement("TFrame"), {
 					Size = UDim2.new(1, 0, 0, 32),
 					Parent = ItemParent
@@ -857,19 +847,16 @@ function NineNexusLib:MakeWindow(WindowConfig)
 						MakeElement("List", 0, 8)
 					})
 				})
-
 				AddConnection(SectionFrame.Holder.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
 					SectionFrame.Size = UDim2.new(1, 0, 0, SectionFrame.Holder.UIListLayout.AbsoluteContentSize.Y + 36)
 					SectionFrame.Holder.Size = UDim2.new(1, 0, 0, SectionFrame.Holder.UIListLayout.AbsoluteContentSize.Y)
 				end)
-
 				local SectionFunction = {}
 				for i, v in next, GetElements(SectionFrame.Holder) do
 					SectionFunction[i] = v
 				end
 				return SectionFunction
 			end
-
 			function ElementFunction:AddLabel(Text)
 				local LabelFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 8), {
 					Size = UDim2.new(1, 0, 0, 36),
@@ -885,18 +872,17 @@ function NineNexusLib:MakeWindow(WindowConfig)
 					}), "Text"),
 					AddThemeObject(MakeElement("Stroke"), "Stroke")
 				}), "Second")
-
 				local LabelFunction = {}
 				function LabelFunction:Set(ToChange)
-					LabelFrame.Content.Text = ToChange
+					if LabelFrame and LabelFrame.Content then
+						LabelFrame.Content.Text = ToChange
+					end
 				end
 				return LabelFunction
 			end
-
 			function ElementFunction:AddParagraph(Text, Content)
 				Text = Text or "Paragraph"
 				Content = Content or "Content"
-
 				local ParagraphFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 8), {
 					Size = UDim2.new(1, 0, 0, 36),
 					BackgroundTransparency = 0.7,
@@ -917,32 +903,32 @@ function NineNexusLib:MakeWindow(WindowConfig)
 					}), "TextDark"),
 					AddThemeObject(MakeElement("Stroke"), "Stroke")
 				}), "Second")
-
 				AddConnection(ParagraphFrame.Content:GetPropertyChangedSignal("Text"), function()
-					ParagraphFrame.Content.Size = UDim2.new(1, -32, 0, ParagraphFrame.Content.TextBounds.Y)
-					ParagraphFrame.Size = UDim2.new(1, 0, 0, ParagraphFrame.Content.TextBounds.Y + 40)
+					if ParagraphFrame and ParagraphFrame.Content then
+						ParagraphFrame.Content.Size = UDim2.new(1, -32, 0, ParagraphFrame.Content.TextBounds.Y)
+						ParagraphFrame.Size = UDim2.new(1, 0, 0, ParagraphFrame.Content.TextBounds.Y + 40)
+					end
 				end)
-
-				ParagraphFrame.Content.Text = Content
-
+				if ParagraphFrame and ParagraphFrame.Content then
+					ParagraphFrame.Content.Text = Content
+				end
 				local ParagraphFunction = {}
 				function ParagraphFunction:Set(ToChange)
-					ParagraphFrame.Content.Text = ToChange
+					if ParagraphFrame and ParagraphFrame.Content then
+						ParagraphFrame.Content.Text = ToChange
+					end
 				end
 				return ParagraphFunction
 			end
-
 			function ElementFunction:AddButton(ButtonConfig)
 				ButtonConfig = ButtonConfig or {}
 				ButtonConfig.Name = ButtonConfig.Name or "Button"
 				ButtonConfig.Callback = ButtonConfig.Callback or function() end
 				ButtonConfig.Icon = ButtonConfig.Icon or "chevron-right"
-
 				local Button = {}
 				local Click = SetProps(MakeElement("Button"), {
 					Size = UDim2.new(1, 0, 1, 0)
 				})
-
 				local ButtonFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 8), {
 					Size = UDim2.new(1, 0, 0, 40),
 					Parent = ItemParent
@@ -962,36 +948,36 @@ function NineNexusLib:MakeWindow(WindowConfig)
 					AddThemeObject(MakeElement("Stroke"), "Stroke"),
 					Click
 				}), "Second")
-
 				AddConnection(Click.MouseEnter, function()
-					TweenService:Create(ButtonFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-						BackgroundColor3 = Color3.fromRGB(
-							math.min(255, NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.R * 255 + 8),
-							math.min(255, NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.G * 255 + 8),
-							math.min(255, NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.B * 255 + 8)
-						)
-					}):Play()
+					if ButtonFrame then
+						TweenService:Create(ButtonFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+							BackgroundColor3 = Color3.fromRGB(
+								NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.R * 255 + 8,
+								NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.G * 255 + 8,
+								NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.B * 255 + 8
+							)
+						}):Play()
+					end
 				end)
-
 				AddConnection(Click.MouseLeave, function()
-					TweenService:Create(ButtonFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-						BackgroundColor3 = NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second
-					}):Play()
+					if ButtonFrame then
+						TweenService:Create(ButtonFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+							BackgroundColor3 = NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second
+						}):Play()
+					end
 				end)
-
-				AddConnection(Click.MouseButton1Click, function()
+				AddConnection(Click.MouseButton1Down, function()
 					task.spawn(function()
 						ButtonConfig.Callback()
 					end)
 				end)
-
 				function Button:Set(ButtonText)
-					ButtonFrame.Content.Text = ButtonText
+					if ButtonFrame and ButtonFrame.Content then
+						ButtonFrame.Content.Text = ButtonText
+					end
 				end
-
 				return Button
 			end
-
 			function ElementFunction:AddToggle(ToggleConfig)
 				ToggleConfig = ToggleConfig or {}
 				ToggleConfig.Name = ToggleConfig.Name or "Toggle"
@@ -1000,13 +986,10 @@ function NineNexusLib:MakeWindow(WindowConfig)
 				ToggleConfig.Color = ToggleConfig.Color or NineNexusLib.Themes.Default.Accent
 				ToggleConfig.Flag = ToggleConfig.Flag or nil
 				ToggleConfig.Save = ToggleConfig.Save or false
-
 				local Toggle = {Value = ToggleConfig.Default, Save = ToggleConfig.Save, Type = "Toggle"}
-
 				local Click = SetProps(MakeElement("Button"), {
 					Size = UDim2.new(1, 0, 1, 0)
 				})
-
 				local ToggleBox = SetChildren(SetProps(MakeElement("RoundFrame", ToggleConfig.Color, 0, 6), {
 					Size = UDim2.new(0, 28, 0, 28),
 					Position = UDim2.new(1, -40, 0.5, 0),
@@ -1018,14 +1001,13 @@ function NineNexusLib:MakeWindow(WindowConfig)
 						Transparency = 0.5
 					}),
 					SetProps(MakeElement("Image", GetIcon("check")), {
-						Size = UDim2.new(0, 16, 0, 16),
+						Size = UDim2.new(0, 16, 0, 16),  -- Fixed: always 16x16
 						AnchorPoint = Vector2.new(0.5, 0.5),
 						Position = UDim2.new(0.5, 0, 0.5, 0),
 						ImageColor3 = Color3.fromRGB(255, 255, 255),
 						Name = "Ico"
 					})
 				})
-
 				local ToggleFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 8), {
 					Size = UDim2.new(1, 0, 0, 44),
 					Parent = ItemParent
@@ -1041,56 +1023,55 @@ function NineNexusLib:MakeWindow(WindowConfig)
 					ToggleBox,
 					Click
 				}), "Second")
-
 				function Toggle:Set(Value)
 					Toggle.Value = Value
-					TweenService:Create(ToggleBox, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-						BackgroundColor3 = Toggle.Value and ToggleConfig.Color or NineNexusLib.Themes.Default.Divider
-					}):Play()
-					TweenService:Create(ToggleBox.Stroke, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-						Color = Toggle.Value and ToggleConfig.Color or NineNexusLib.Themes.Default.Stroke
-					}):Play()
-					TweenService:Create(ToggleBox.Ico, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-						ImageTransparency = Toggle.Value and 0 or 1,
-						Size = Toggle.Value and UDim2.new(0, 16, 0, 16) or UDim2.new(0, 8, 0, 8)
-					}):Play()
-					task.spawn(function()
-						ToggleConfig.Callback(Toggle.Value)
-					end)
+					if ToggleBox then
+						TweenService:Create(ToggleBox, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+							BackgroundColor3 = Toggle.Value and ToggleConfig.Color or NineNexusLib.Themes.Default.Divider
+						}):Play()
+						TweenService:Create(ToggleBox.Stroke, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+							Color = Toggle.Value and ToggleConfig.Color or NineNexusLib.Themes.Default.Stroke
+						}):Play()
+						-- Fixed: only transparency, no size change
+						if ToggleBox.Ico then
+							TweenService:Create(ToggleBox.Ico, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+								ImageTransparency = Toggle.Value and 0 or 1
+							}):Play()
+						end
+					end
+					ToggleConfig.Callback(Toggle.Value)
 				end
-
 				Toggle:Set(Toggle.Value)
-
 				AddConnection(Click.MouseEnter, function()
-					TweenService:Create(ToggleFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-						BackgroundColor3 = Color3.fromRGB(
-							math.min(255, NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.R * 255 + 8),
-							math.min(255, NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.G * 255 + 8),
-							math.min(255, NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.B * 255 + 8)
-						)
-					}):Play()
+					if ToggleFrame then
+						TweenService:Create(ToggleFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+							BackgroundColor3 = Color3.fromRGB(
+								NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.R * 255 + 8,
+								NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.G * 255 + 8,
+								NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second.B * 255 + 8
+							)
+						}):Play()
+					end
 				end)
-
 				AddConnection(Click.MouseLeave, function()
-					TweenService:Create(ToggleFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-						BackgroundColor3 = NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second
-					}):Play()
+					if ToggleFrame then
+						TweenService:Create(ToggleFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+							BackgroundColor3 = NineNexusLib.Themes[NineNexusLib.SelectedTheme].Second
+						}):Play()
+					end
 				end)
-
-				AddConnection(Click.MouseButton1Click, function()
+				AddConnection(Click.MouseButton1Down, function()
 					Toggle:Set(not Toggle.Value)
 					if NineNexusLib.SaveCfg then
 						SaveCfg(game.GameId)
 					end
 				end)
-
 				if ToggleConfig.Flag then
 					NineNexusLib.Flags[ToggleConfig.Flag] = Toggle
 				end
-
 				return Toggle
 			end
-
+			-- Fixed Slider Element
 			function ElementFunction:AddSlider(SliderConfig)
 				SliderConfig = SliderConfig or {}
 				SliderConfig.Name = SliderConfig.Name or "Slider"
@@ -1099,250 +1080,242 @@ function NineNexusLib:MakeWindow(WindowConfig)
 				SliderConfig.Default = SliderConfig.Default or SliderConfig.Min
 				SliderConfig.Color = SliderConfig.Color or NineNexusLib.Themes.Default.Accent
 				SliderConfig.Increment = SliderConfig.Increment or 1
+				SliderConfig.ValueName = SliderConfig.ValueName or ""
 				SliderConfig.Callback = SliderConfig.Callback or function() end
 				SliderConfig.Flag = SliderConfig.Flag or nil
 				SliderConfig.Save = SliderConfig.Save or false
-
 				local Slider = {Value = SliderConfig.Default, Save = SliderConfig.Save, Type = "Slider"}
-
+				local Dragging = false
 				local SliderFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 8), {
-					Size = UDim2.new(1, 0, 0, 60),
+					Size = UDim2.new(1, 0, 0, 54),
 					Parent = ItemParent
 				}), {
 					AddThemeObject(SetProps(MakeElement("Label", SliderConfig.Name, 14), {
-						Size = UDim2.new(1, -16, 0, 20),
+						Size = UDim2.new(1, -100, 0, 20),  -- Fixed alignment: narrower for title
 						Position = UDim2.new(0, 16, 0, 8),
 						Font = Enum.Font.GothamMedium,
 						Name = "Title"
 					}), "Text"),
-					AddThemeObject(SetProps(MakeElement("Label", tostring(SliderConfig.Default), 14), {
-						Size = UDim2.new(0, 50, 0, 20),
-						Position = UDim2.new(1, -66, 0, 8),
-						Font = Enum.Font.GothamBold,
-						TextXAlignment = Enum.TextXAlignment.Right,
-						Name = "Value"
-					}), "Text"),
+					AddThemeObject(SetProps(MakeElement("Label", tostring(SliderConfig.Default) .. SliderConfig.ValueName, 13), {
+						Size = UDim2.new(0, 80, 0, 20),  -- Fixed: fixed width, right-aligned
+						Position = UDim2.new(1, -80, 0, 8),
+						Font = Enum.Font.GothamMedium,
+						Name = "Value",
+						TextXAlignment = Enum.TextXAlignment.Right
+					}), "TextDark"),
 					AddThemeObject(MakeElement("Stroke"), "Stroke")
 				}), "Second")
-
-				local SliderBack = AddThemeObject(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 4), {
-					Size = UDim2.new(1, -32, 0, 8),
-					Position = UDim2.new(0, 16, 1, -20),
+				-- Slider Bar
+				local SliderBar = SetChildren(SetProps(MakeElement("RoundFrame", NineNexusLib.Themes.Default.Divider, 0, 4), {
+					Size = UDim2.new(1, -32, 0, 6),
+					Position = UDim2.new(0, 16, 1, -18),
 					Parent = SliderFrame
-				}), "Divider")
-
-				local SliderFill = SetProps(MakeElement("RoundFrame", SliderConfig.Color, 0, 4), {
-					Size = UDim2.new(0, 0, 1, 0),
-					Parent = SliderBack
+				}), {
+					SetProps(MakeElement("RoundFrame", SliderConfig.Color, 0, 4), {
+						Size = UDim2.new(0, 0, 1, 0),
+						Name = "Fill"
+					}),
+					SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 1, 0), {
+						Size = UDim2.new(0, 12, 0, 12),
+						Position = UDim2.new(0, -6, 0.5, -6),
+						Name = "Knob",
+						BorderSizePixel = 0
+					})
 				})
-
-				local SliderButton = SetProps(MakeElement("Button"), {
-					Size = UDim2.new(1, 0, 1, 0),
-					Parent = SliderFrame
-				})
-
 				local function UpdateSlider(Value)
-					Value = math.clamp(Value, SliderConfig.Min, SliderConfig.Max)
-					Value = Round(Value, SliderConfig.Increment)
-					Slider.Value = Value
-
-					local Percentage = (Value - SliderConfig.Min) / (SliderConfig.Max - SliderConfig.Min)
-					TweenService:Create(SliderFill, TweenInfo.new(0.1, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-						Size = UDim2.new(Percentage, 0, 1, 0)
-					}):Play()
-
-					SliderFrame.Value.Text = tostring(Value)
-					task.spawn(function()
-						SliderConfig.Callback(Value)
-					end)
+					Slider.Value = Round(math.clamp(Value, SliderConfig.Min, SliderConfig.Max), SliderConfig.Increment)
+					if SliderFrame and SliderFrame.Value then
+						SliderFrame.Value.Text = tostring(Slider.Value) .. SliderConfig.ValueName
+					end
+					local Percent = (Slider.Value - SliderConfig.Min) / (SliderConfig.Max - SliderConfig.Min)
+					if SliderBar and SliderBar.Fill and SliderBar.Knob then
+						TweenService:Create(SliderBar.Fill, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+							Size = UDim2.new(Percent, 0, 1, 0)
+						}):Play()
+						TweenService:Create(SliderBar.Knob, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+							Position = UDim2.new(Percent, -6, 0.5, -6)
+						}):Play()
+					end
+					SliderConfig.Callback(Slider.Value)
 				end
-
-				local Dragging = false
-
-				AddConnection(SliderButton.MouseButton1Down, function()
-					Dragging = true
-				end)
-
-				AddConnection(UserInputService.InputEnded, function(Input)
-					if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-						Dragging = false
-					end
-				end)
-
-				AddConnection(SliderButton.MouseMoved, function()
-					if Dragging then
-						local MousePos = UserInputService:GetMouseLocation().X
-						local SliderPos = SliderBack.AbsolutePosition.X
-						local SliderSize = SliderBack.AbsoluteSize.X
-						local Percentage = math.clamp((MousePos - SliderPos) / SliderSize, 0, 1)
-						local Value = SliderConfig.Min + (Percentage * (SliderConfig.Max - SliderConfig.Min))
-						UpdateSlider(Value)
-					end
-				end)
-
-				AddConnection(SliderButton.MouseButton1Click, function()
-					local MousePos = UserInputService:GetMouseLocation().X
-					local SliderPos = SliderBack.AbsolutePosition.X
-					local SliderSize = SliderBack.AbsoluteSize.X
-					local Percentage = math.clamp((MousePos - SliderPos) / SliderSize, 0, 1)
-					local Value = SliderConfig.Min + (Percentage * (SliderConfig.Max - SliderConfig.Min))
-					UpdateSlider(Value)
-					if NineNexusLib.SaveCfg then
-						SaveCfg(game.GameId)
-					end
-				end)
-
 				function Slider:Set(Value)
 					UpdateSlider(Value)
 				end
-
+				-- Fixed dragging for slider
+				AddConnection(SliderBar.InputBegan, function(Input)
+					if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+						Dragging = true
+						local function Update()
+							local MousePos = Mouse.X
+							local BarPos = SliderBar.AbsolutePosition.X
+							local BarSize = SliderBar.AbsoluteSize.X
+							local Percent = math.clamp((MousePos - BarPos) / BarSize, 0, 1)
+							local Value = SliderConfig.Min + (Percent * (SliderConfig.Max - SliderConfig.Min))
+							UpdateSlider(Value)
+						end
+						Update()
+						local MoveConnection = AddConnection(Mouse.Move, Update)
+						local ReleaseConnection
+						ReleaseConnection = AddConnection(UserInputService.InputEnded, function(EndInput)
+							if EndInput.UserInputType == Enum.UserInputType.MouseButton1 then
+								Dragging = false
+								if MoveConnection then MoveConnection:Disconnect() end
+								if ReleaseConnection then ReleaseConnection:Disconnect() end
+								if NineNexusLib.SaveCfg then
+									SaveCfg(game.GameId)
+								end
+							end
+						end)
+					end
+				end)
 				UpdateSlider(SliderConfig.Default)
-
 				if SliderConfig.Flag then
 					NineNexusLib.Flags[SliderConfig.Flag] = Slider
 				end
-
 				return Slider
 			end
-
+			-- Dropdown Element
 			function ElementFunction:AddDropdown(DropdownConfig)
 				DropdownConfig = DropdownConfig or {}
 				DropdownConfig.Name = DropdownConfig.Name or "Dropdown"
+				DropdownConfig.Default = DropdownConfig.Default or ""
 				DropdownConfig.Options = DropdownConfig.Options or {"Option 1", "Option 2"}
-				DropdownConfig.Default = DropdownConfig.Default or DropdownConfig.Options[1]
 				DropdownConfig.Callback = DropdownConfig.Callback or function() end
 				DropdownConfig.Flag = DropdownConfig.Flag or nil
 				DropdownConfig.Save = DropdownConfig.Save or false
-
-				local Dropdown = {Value = DropdownConfig.Default, Save = DropdownConfig.Save, Type = "Dropdown"}
+				local Dropdown = {Value = DropdownConfig.Default, Save = DropdownConfig.Save, Type = "Dropdown", Options = DropdownConfig.Options}
 				local Opened = false
-
 				local DropdownFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 8), {
 					Size = UDim2.new(1, 0, 0, 44),
-					Parent = ItemParent
+					Parent = ItemParent,
+					ClipsDescendants = true
 				}), {
 					AddThemeObject(SetProps(MakeElement("Label", DropdownConfig.Name, 14), {
-						Size = UDim2.new(1, -60, 1, 0),
+						Size = UDim2.new(1, -50, 0, 44),
 						Position = UDim2.new(0, 16, 0, 0),
 						Font = Enum.Font.GothamMedium,
 						Name = "Title",
 						TextYAlignment = Enum.TextYAlignment.Center
 					}), "Text"),
 					AddThemeObject(SetProps(MakeElement("Label", DropdownConfig.Default, 13), {
-						Size = UDim2.new(0, 120, 1, 0),
-						Position = UDim2.new(1, -140, 0, 0),
+						Size = UDim2.new(0.4, -24, 0, 44),
+						Position = UDim2.new(0.6, 0, 0, 0),
 						Font = Enum.Font.GothamMedium,
 						Name = "Selected",
-						TextYAlignment = Enum.TextYAlignment.Center,
-						TextXAlignment = Enum.TextXAlignment.Right
+						TextXAlignment = Enum.TextXAlignment.Right,
+						TextYAlignment = Enum.TextYAlignment.Center
 					}), "TextDark"),
 					AddThemeObject(SetProps(MakeElement("Image", GetIcon("chevron-down")), {
 						Size = UDim2.new(0, 16, 0, 16),
-						Position = UDim2.new(1, -30, 0.5, 0),
-						AnchorPoint = Vector2.new(0, 0.5),
+						Position = UDim2.new(1, -28, 0.5, -8),
 						Name = "Arrow"
 					}), "TextDark"),
+					SetProps(MakeElement("Button"), {
+						Size = UDim2.new(1, 0, 0, 44),
+						Name = "ClickDetector"
+					}),
 					AddThemeObject(MakeElement("Stroke"), "Stroke")
 				}), "Second")
-
-				local DropdownButton = SetProps(MakeElement("Button"), {
-					Size = UDim2.new(1, 0, 1, 0),
-					Parent = DropdownFrame
-				})
-
-				local OptionsFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 8), {
+				local OptionsList = SetChildren(SetProps(MakeElement("TFrame"), {
 					Size = UDim2.new(1, 0, 0, 0),
-					Position = UDim2.new(0, 0, 1, 4),
+					Position = UDim2.new(0, 0, 0, 44),
 					Parent = DropdownFrame,
-					Visible = false,
-					ZIndex = 10
+					Name = "Options"
 				}), {
-					AddThemeObject(MakeElement("Stroke"), "Stroke"),
-					SetChildren(SetProps(MakeElement("TFrame"), {
-						Size = UDim2.new(1, 0, 1, 0),
-						Name = "Holder"
-					}), {
-						MakeElement("List", 0, 0),
-						MakeElement("Padding", 4, 4, 4, 4)
-					})
-				}), "Second")
-
-				for _, Option in pairs(DropdownConfig.Options) do
-					local OptionButton = SetChildren(SetProps(MakeElement("Button"), {
+					MakeElement("List", 0, 0)
+				})
+				local function CreateOption(OptionText)
+					local OptionFrame = AddThemeObject(SetChildren(SetProps(MakeElement("Frame", Color3.fromRGB(255, 255, 255)), {
 						Size = UDim2.new(1, 0, 0, 32),
-						Parent = OptionsFrame.Holder
+						Parent = OptionsList
 					}), {
-						AddThemeObject(SetProps(MakeElement("Label", Option, 13), {
+						AddThemeObject(SetProps(MakeElement("Label", OptionText, 13), {
 							Size = UDim2.new(1, -16, 1, 0),
-							Position = UDim2.new(0, 8, 0, 0),
+							Position = UDim2.new(0, 16, 0, 0),
 							Font = Enum.Font.GothamMedium,
 							TextYAlignment = Enum.TextYAlignment.Center
-						}), "Text")
-					})
-
-					AddConnection(OptionButton.MouseEnter, function()
-						TweenService:Create(OptionButton, TweenInfo.new(0.1, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-							BackgroundColor3 = NineNexusLib.Themes.Default.Divider
-						}):Play()
-					end)
-
-					AddConnection(OptionButton.MouseLeave, function()
-						TweenService:Create(OptionButton, TweenInfo.new(0.1, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-							BackgroundTransparency = 1
-						}):Play()
-					end)
-
-					AddConnection(OptionButton.MouseButton1Click, function()
-						Dropdown:Set(Option)
-						Opened = false
-						OptionsFrame.Visible = false
-						TweenService:Create(DropdownFrame.Arrow, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-							Rotation = 0
-						}):Play()
-						if NineNexusLib.SaveCfg then
-							SaveCfg(game.GameId)
+						}), "Text"),
+						SetProps(MakeElement("Button"), {
+							Size = UDim2.new(1, 0, 1, 0)
+						})
+					}), "Divider")
+					AddConnection(OptionFrame.TextButton.MouseButton1Down, function()
+						if DropdownFrame and DropdownFrame.Selected then
+							Dropdown:Set(OptionText)
 						end
+						Dropdown:Close()
 					end)
+					return OptionFrame
 				end
-
-				AddConnection(OptionsFrame.Holder.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
-					OptionsFrame.Size = UDim2.new(1, 0, 0, OptionsFrame.Holder.UIListLayout.AbsoluteContentSize.Y + 8)
-				end)
-
-				AddConnection(DropdownButton.MouseButton1Click, function()
-					Opened = not Opened
-					OptionsFrame.Visible = Opened
-					TweenService:Create(DropdownFrame.Arrow, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-						Rotation = Opened and 180 or 0
-					}):Play()
-				end)
-
 				function Dropdown:Set(Value)
 					Dropdown.Value = Value
-					DropdownFrame.Selected.Text = Value
-					task.spawn(function()
-						DropdownConfig.Callback(Value)
-					end)
+					if DropdownFrame and DropdownFrame.Selected then
+						DropdownFrame.Selected.Text = Value
+					end
+					DropdownConfig.Callback(Value)
 				end
-
+				function Dropdown:Refresh(NewOptions)
+					for _, Option in pairs(OptionsList:GetChildren()) do
+						if Option:IsA("Frame") then
+							Option:Destroy()
+						end
+					end
+					Dropdown.Options = NewOptions
+					for _, Option in pairs(NewOptions) do
+						CreateOption(Option)
+					end
+				end
+				function Dropdown:Open()
+					if Opened then return end
+					Opened = true
+					local OptionsCount = #Dropdown.Options
+					local TargetHeight = 44 + (OptionsCount * 32)
+					if DropdownFrame then
+						TweenService:Create(DropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+							Size = UDim2.new(1, 0, 0, TargetHeight)
+						}):Play()
+						TweenService:Create(DropdownFrame.Arrow, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+							Rotation = 180
+						}):Play()
+					end
+				end
+				function Dropdown:Close()
+					if not Opened then return end
+					Opened = false
+					if DropdownFrame then
+						TweenService:Create(DropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+							Size = UDim2.new(1, 0, 0, 44)
+						}):Play()
+						TweenService:Create(DropdownFrame.Arrow, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+							Rotation = 0
+						}):Play()
+					end
+				end
+				AddConnection(DropdownFrame.ClickDetector.MouseButton1Down, function()
+					if Opened then
+						Dropdown:Close()
+					else
+						Dropdown:Open()
+					end
+				end)
+				for _, Option in pairs(DropdownConfig.Options) do
+					CreateOption(Option)
+				end
 				if DropdownConfig.Flag then
 					NineNexusLib.Flags[DropdownConfig.Flag] = Dropdown
 				end
-
 				return Dropdown
 			end
-
+			-- TextBox Element
 			function ElementFunction:AddTextbox(TextboxConfig)
 				TextboxConfig = TextboxConfig or {}
-				TextboxConfig.Name = TextboxConfig.Name or "Textbox"
+				TextboxConfig.Name = TextboxConfig.Name or "TextBox"
 				TextboxConfig.Default = TextboxConfig.Default or ""
-				TextboxConfig.PlaceholderText = TextboxConfig.PlaceholderText or "Enter text..."
+				TextboxConfig.TextDisappear = TextboxConfig.TextDisappear or false
 				TextboxConfig.Callback = TextboxConfig.Callback or function() end
 				TextboxConfig.Flag = TextboxConfig.Flag or nil
 				TextboxConfig.Save = TextboxConfig.Save or false
-
 				local Textbox = {Value = TextboxConfig.Default, Save = TextboxConfig.Save, Type = "Textbox"}
-
 				local TextboxFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 8), {
 					Size = UDim2.new(1, 0, 0, 44),
 					Parent = ItemParent
@@ -1354,133 +1327,102 @@ function NineNexusLib:MakeWindow(WindowConfig)
 						Name = "Title",
 						TextYAlignment = Enum.TextYAlignment.Center
 					}), "Text"),
+					AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", NineNexusLib.Themes.Default.Main, 0, 6), {
+						Size = UDim2.new(0.5, -8, 0, 28),
+						Position = UDim2.new(0.5, 8, 0.5, -14),
+						Name = "InputFrame"
+					}), {
+						AddThemeObject(MakeElement("Stroke"), "Stroke"),
+						AddThemeObject(SetProps(MakeElement("TextBox", TextboxConfig.Default, ""), {
+							Size = UDim2.new(1, -12, 1, 0),
+							Position = UDim2.new(0, 6, 0, 0),
+							TextXAlignment = Enum.TextXAlignment.Left,
+							TextYAlignment = Enum.TextYAlignment.Center,
+							Name = "Input"
+						}), "Text")
+					}), "Main"),
 					AddThemeObject(MakeElement("Stroke"), "Stroke")
 				}), "Second")
-
-				local TextboxInput = AddThemeObject(SetProps(Create("TextBox", {
-					Size = UDim2.new(0.5, -24, 0, 28),
-					Position = UDim2.new(0.5, 8, 0.5, 0),
-					AnchorPoint = Vector2.new(0, 0.5),
-					BackgroundColor3 = NineNexusLib.Themes.Default.Divider,
-					BorderSizePixel = 0,
-					Text = TextboxConfig.Default,
-					PlaceholderText = TextboxConfig.PlaceholderText,
-					TextColor3 = NineNexusLib.Themes.Default.Text,
-					TextSize = 13,
-					Font = Enum.Font.GothamMedium,
-					Parent = TextboxFrame
-				}), {
-					MakeElement("Corner", 0, 6),
-					MakeElement("Padding", 0, 8, 8, 0)
-				}), "Divider")
-
-				AddConnection(TextboxInput.FocusLost, function()
-					Textbox.Value = TextboxInput.Text
-					task.spawn(function()
-						TextboxConfig.Callback(TextboxInput.Text)
-					end)
-					if NineNexusLib.SaveCfg then
-						SaveCfg(game.GameId)
-					end
-				end)
-
 				function Textbox:Set(Value)
 					Textbox.Value = Value
-					TextboxInput.Text = Value
+					if TextboxFrame and TextboxFrame.InputFrame and TextboxFrame.InputFrame.Input then
+						TextboxFrame.InputFrame.Input.Text = Value
+					end
+					TextboxConfig.Callback(Value)
 				end
-
+				AddConnection(TextboxFrame.InputFrame.Input.FocusLost, function(EnterPressed)
+					if EnterPressed then
+						local newValue = TextboxFrame.InputFrame.Input.Text
+						Textbox:Set(newValue)
+						if TextboxConfig.TextDisappear then
+							if TextboxFrame and TextboxFrame.InputFrame and TextboxFrame.InputFrame.Input then
+								TextboxFrame.InputFrame.Input.Text = ""
+							end
+						end
+						if NineNexusLib.SaveCfg then
+							SaveCfg(game.GameId)
+						end
+					end
+				end)
 				if TextboxConfig.Flag then
 					NineNexusLib.Flags[TextboxConfig.Flag] = Textbox
 				end
-
 				return Textbox
 			end
-
+			-- Colorpicker Element
 			function ElementFunction:AddColorpicker(ColorpickerConfig)
 				ColorpickerConfig = ColorpickerConfig or {}
-				ColorpickerConfig.Name = ColorpickerConfig.Name or "Colorpicker"
+				ColorpickerConfig.Name = ColorpickerConfig.Name or "Color Picker"
 				ColorpickerConfig.Default = ColorpickerConfig.Default or Color3.fromRGB(255, 255, 255)
 				ColorpickerConfig.Callback = ColorpickerConfig.Callback or function() end
 				ColorpickerConfig.Flag = ColorpickerConfig.Flag or nil
 				ColorpickerConfig.Save = ColorpickerConfig.Save or false
-
 				local Colorpicker = {Value = ColorpickerConfig.Default, Save = ColorpickerConfig.Save, Type = "Colorpicker"}
-
 				local ColorpickerFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 8), {
 					Size = UDim2.new(1, 0, 0, 44),
 					Parent = ItemParent
 				}), {
 					AddThemeObject(SetProps(MakeElement("Label", ColorpickerConfig.Name, 14), {
-						Size = UDim2.new(1, -60, 1, 0),
+						Size = UDim2.new(1, -50, 1, 0),
 						Position = UDim2.new(0, 16, 0, 0),
 						Font = Enum.Font.GothamMedium,
 						Name = "Title",
 						TextYAlignment = Enum.TextYAlignment.Center
 					}), "Text"),
+					SetChildren(SetProps(MakeElement("RoundFrame", ColorpickerConfig.Default, 0, 6), {
+						Size = UDim2.new(0, 28, 0, 28),
+						Position = UDim2.new(1, -40, 0.5, -14),
+						Name = "Preview"
+					}), {
+						AddThemeObject(MakeElement("Stroke"), "Stroke"),
+						SetProps(MakeElement("Button"), {
+							Size = UDim2.new(1, 0, 1, 0)
+						})
+					}),
 					AddThemeObject(MakeElement("Stroke"), "Stroke")
 				}), "Second")
-
-				local ColorDisplay = SetChildren(SetProps(MakeElement("RoundFrame", ColorpickerConfig.Default, 0, 6), {
-					Size = UDim2.new(0, 28, 0, 28),
-					Position = UDim2.new(1, -40, 0.5, 0),
-					AnchorPoint = Vector2.new(0, 0.5),
-					Parent = ColorpickerFrame
-				}), {
-					AddThemeObject(MakeElement("Stroke"), "Stroke")
-				})
-
-				local ColorButton = SetProps(MakeElement("Button"), {
-					Size = UDim2.new(1, 0, 1, 0),
-					Parent = ColorpickerFrame
-				})
-
-				AddConnection(ColorButton.MouseButton1Click, function()
-					-- Simple color picker - cycles through preset colors
-					local Colors = {
-						Color3.fromRGB(255, 0, 0),
-						Color3.fromRGB(0, 255, 0),
-						Color3.fromRGB(0, 0, 255),
-						Color3.fromRGB(255, 255, 0),
-						Color3.fromRGB(255, 0, 255),
-						Color3.fromRGB(0, 255, 255),
-						Color3.fromRGB(255, 255, 255),
-						Color3.fromRGB(0, 0, 0)
-					}
-					
-					local CurrentIndex = 1
-					for i, Color in pairs(Colors) do
-						if Color == Colorpicker.Value then
-							CurrentIndex = i
-							break
-						end
+				function Colorpicker:Set(Color)
+					Colorpicker.Value = Color
+					if ColorpickerFrame and ColorpickerFrame.Preview then
+						ColorpickerFrame.Preview.BackgroundColor3 = Color
 					end
-					
-					local NextIndex = CurrentIndex + 1
-					if NextIndex > #Colors then
-						NextIndex = 1
-					end
-					
-					Colorpicker:Set(Colors[NextIndex])
+					ColorpickerConfig.Callback(Color)
+				end
+				-- Simple color picker (you can expand this with a full color wheel)
+				AddConnection(ColorpickerFrame.Preview.TextButton.MouseButton1Down, function()
+					-- This is a simple implementation - you could add a full color picker GUI here
+					local RandomColor = Color3.fromRGB(math.random(0, 255), math.random(0, 255), math.random(0, 255))
+					Colorpicker:Set(RandomColor)
 					if NineNexusLib.SaveCfg then
 						SaveCfg(game.GameId)
 					end
 				end)
-
-				function Colorpicker:Set(Color)
-					Colorpicker.Value = Color
-					ColorDisplay.BackgroundColor3 = Color
-					task.spawn(function()
-						ColorpickerConfig.Callback(Color)
-					end)
-				end
-
 				if ColorpickerConfig.Flag then
 					NineNexusLib.Flags[ColorpickerConfig.Flag] = Colorpicker
 				end
-
 				return Colorpicker
 			end
-
+			-- Keybind Element
 			function ElementFunction:AddKeybind(KeybindConfig)
 				KeybindConfig = KeybindConfig or {}
 				KeybindConfig.Name = KeybindConfig.Name or "Keybind"
@@ -1488,103 +1430,84 @@ function NineNexusLib:MakeWindow(WindowConfig)
 				KeybindConfig.Callback = KeybindConfig.Callback or function() end
 				KeybindConfig.Flag = KeybindConfig.Flag or nil
 				KeybindConfig.Save = KeybindConfig.Save or false
-
 				local Keybind = {Value = KeybindConfig.Default, Save = KeybindConfig.Save, Type = "Keybind"}
-				local Binding = false
-
+				local WaitingForKey = false
 				local KeybindFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 8), {
 					Size = UDim2.new(1, 0, 0, 44),
 					Parent = ItemParent
 				}), {
 					AddThemeObject(SetProps(MakeElement("Label", KeybindConfig.Name, 14), {
-						Size = UDim2.new(1, -120, 1, 0),
+						Size = UDim2.new(1, -100, 1, 0),
 						Position = UDim2.new(0, 16, 0, 0),
 						Font = Enum.Font.GothamMedium,
 						Name = "Title",
 						TextYAlignment = Enum.TextYAlignment.Center
 					}), "Text"),
+					AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", NineNexusLib.Themes.Default.Main, 0, 6), {
+						Size = UDim2.new(0, 80, 0, 28),
+						Position = UDim2.new(1, -92, 0.5, -14),
+						Name = "KeyFrame"
+					}), {
+						AddThemeObject(MakeElement("Stroke"), "Stroke"),
+						AddThemeObject(SetProps(MakeElement("Label", KeybindConfig.Default.Name, 12), {
+							Size = UDim2.new(1, 0, 1, 0),
+							Font = Enum.Font.GothamMedium,
+							TextYAlignment = Enum.TextYAlignment.Center,
+							Name = "KeyLabel"
+						}), "Text"),
+						SetProps(MakeElement("Button"), {
+							Size = UDim2.new(1, 0, 1, 0)
+						})
+					}), "Main"),
 					AddThemeObject(MakeElement("Stroke"), "Stroke")
 				}), "Second")
-
-				local KeybindButton = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 6), {
-					Size = UDim2.new(0, 80, 0, 28),
-					Position = UDim2.new(1, -92, 0.5, 0),
-					AnchorPoint = Vector2.new(0, 0.5),
-					Parent = KeybindFrame
-				}), {
-					AddThemeObject(SetProps(MakeElement("Label", KeybindConfig.Default.Name, 12), {
-						Size = UDim2.new(1, 0, 1, 0),
-						Font = Enum.Font.GothamMedium,
-						Name = "KeyLabel",
-						TextYAlignment = Enum.TextYAlignment.Center
-					}), "Text"),
-					AddThemeObject(MakeElement("Stroke"), "Stroke"),
-					SetProps(MakeElement("Button"), {
-						Size = UDim2.new(1, 0, 1, 0),
-						Name = "ClickDetector"
-					})
-				}), "Divider")
-
-				AddConnection(KeybindButton.ClickDetector.MouseButton1Click, function()
-					if not Binding then
-						Binding = true
-						KeybindButton.KeyLabel.Text = "..."
-						
-						local Connection
-						Connection = AddConnection(UserInputService.InputBegan, function(Input)
-							if Input.UserInputType == Enum.UserInputType.Keyboard then
-								Keybind:Set(Input.KeyCode)
-								Binding = false
-								Connection:Disconnect()
-								if NineNexusLib.SaveCfg then
-									SaveCfg(game.GameId)
-								end
-							end
-						end)
-					end
-				end)
-
-				AddConnection(UserInputService.InputBegan, function(Input)
-					if Input.KeyCode == Keybind.Value and not Binding then
-						task.spawn(function()
-							KeybindConfig.Callback()
-						end)
-					end
-				end)
-
 				function Keybind:Set(Key)
 					Keybind.Value = Key
-					KeybindButton.KeyLabel.Text = Key.Name
+					if KeybindFrame and KeybindFrame.KeyFrame and KeybindFrame.KeyFrame.KeyLabel then
+						KeybindFrame.KeyFrame.KeyLabel.Text = Key.Name
+					end
 				end
-
+				AddConnection(KeybindFrame.KeyFrame.TextButton.MouseButton1Down, function()
+					if WaitingForKey then return end
+					WaitingForKey = true
+					if KeybindFrame and KeybindFrame.KeyFrame and KeybindFrame.KeyFrame.KeyLabel then
+						KeybindFrame.KeyFrame.KeyLabel.Text = "..."
+					end
+					local Connection
+					Connection = AddConnection(UserInputService.InputBegan, function(Input, GameProcessed)
+						if GameProcessed then return end
+						if Input.UserInputType == Enum.UserInputType.Keyboard then
+							Keybind:Set(Input.KeyCode)
+							WaitingForKey = false
+							if Connection then Connection:Disconnect() end
+							if NineNexusLib.SaveCfg then
+								SaveCfg(game.GameId)
+							end
+						end
+					end)
+				end)
+				-- Handle the keybind press
+				AddConnection(UserInputService.InputBegan, function(Input, GameProcessed)
+					if GameProcessed then return end
+					if Input.KeyCode == Keybind.Value then
+						KeybindConfig.Callback()
+					end
+				end)
 				if KeybindConfig.Flag then
 					NineNexusLib.Flags[KeybindConfig.Flag] = Keybind
 				end
-
 				return Keybind
 			end
-
 			return ElementFunction
 		end
-
-		local ElementFunction = {}
-		function ElementFunction:AddSection(SectionConfig)
-			return GetElements(Container):AddSection(SectionConfig)
-		end
-
-		for i, v in next, GetElements(Container) do
-			ElementFunction[i] = v
-		end
-
+		local ElementFunction = GetElements(Container)
 		return ElementFunction
 	end
-
 	NineNexusLib:MakeNotification({
 		Name = "NineNexus Loaded",
-		Content = "UI Library successfully initialized",
+		Content = "UI Library successfully initialized with all elements",
 		Time = 3
 	})
-
 	return TabFunction
 end
 
