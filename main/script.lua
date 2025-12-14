@@ -1,21 +1,17 @@
--- UltimateOrionLib - Полностью самостоятельная UI библиотека для Roblox
--- Вдохновлено OrionLib fixed + Linoria, с Lucide иконками, аватаркой и всеми элементами
--- Готова к использованию, без внешних загрузок (кроме иконок)
-
 local UltimateOrionLib = {}
 
--- Сервисы
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
-local DataStoreService = game:GetService("DataStoreService") -- для сохранения
+local DataStoreService = game:GetService("DataStoreService")
 
--- Загружаем Lucide иконки
-local IconsJson = HttpService:JSONDecode(HttpService:GetAsync("https://raw.githubusercontent.com/frappedevs/lucideblox/master/src/modules/util/icons.json"))
+local success, IconsJson = pcall(function()
+    return HttpService:JSONDecode(HttpService:GetAsync("https://raw.githubusercontent.com/frappedevs/lucideblox/master/src/modules/util/icons.json"))
+end)
+if not success then IconsJson = {} end
 
--- Основные цвета
 local Colors = {
     Background = Color3.fromRGB(20, 20, 25),
     Accent = Color3.fromRGB(100, 150, 255),
@@ -26,11 +22,11 @@ local Colors = {
     ToggleOn = Color3.fromRGB(100, 150, 255)
 }
 
--- Уведомления (глобальный холдер)
 local NotificationHolder = Instance.new("ScreenGui")
 NotificationHolder.Name = "NotificationHolder"
-NotificationHolder.Parent = game.CoreGui
+NotificationHolder.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 NotificationHolder.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+NotificationHolder.ResetOnSpawn = false
 
 function UltimateOrionLib:MakeNotification(options)
     local Title = options.Name or "Notification"
@@ -78,18 +74,14 @@ function UltimateOrionLib:MakeNotification(options)
     NotifContent.TextWrapped = true
     NotifContent.Parent = NotifFrame
     
-    -- Анимация появления
     TweenService:Create(NotifFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(1, -320, 1, -100)}):Play()
     
-    wait(Time)
-    
-    -- Анимация исчезновения
-    TweenService:Create(NotifFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(1, 320, 1, -100)}):Play()
-    wait(0.5)
-    NotifFrame:Destroy()
+    task.delay(Time, function()
+        TweenService:Create(NotifFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(1, 320, 1, -100)}):Play()
+        task.delay(0.5, function() NotifFrame:Destroy() end)
+    end)
 end
 
--- Функция создания окна
 function UltimateOrionLib:MakeWindow(options)
     local Name = options.Name or "Ultimate Hub"
     local SaveConfig = options.SaveConfig or false
@@ -100,8 +92,9 @@ function UltimateOrionLib:MakeWindow(options)
     
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "UltimateUI"
-    ScreenGui.Parent = game.CoreGui
+    ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.ResetOnSpawn = false
     
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "Main"
@@ -119,7 +112,6 @@ function UltimateOrionLib:MakeWindow(options)
     UIGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Colors.Background), ColorSequenceKeypoint.new(1, Colors.Secondary)}
     UIGradient.Parent = MainFrame
     
-    -- Перетаскивание
     local dragging = false
     local dragInput, dragStart, startPos
     MainFrame.InputBegan:Connect(function(input)
@@ -139,7 +131,6 @@ function UltimateOrionLib:MakeWindow(options)
         end
     end)
     
-    -- Заголовок
     local Header = Instance.new("Frame")
     Header.Size = UDim2.new(1, 0, 0, 50)
     Header.BackgroundColor3 = Colors.Secondary
@@ -160,29 +151,24 @@ function UltimateOrionLib:MakeWindow(options)
     Title.TextXAlignment = Enum.TextXAlignment.Left
     Title.Parent = Header
     
-    -- Зона для аватарки (Roblox avatar пользователя)
     local Avatar = Instance.new("ImageLabel")
     Avatar.Size = UDim2.new(0, 40, 0, 40)
     Avatar.Position = UDim2.new(0, 10, 0, 5)
     Avatar.BackgroundTransparency = 1
-    Avatar.Image = "rbxassetid://0" -- placeholder
+    Avatar.Image = "rbxassetid://0"
     Avatar.Parent = Header
     
     local AvatarCorner = Instance.new("UICorner")
     AvatarCorner.CornerRadius = UDim.new(1, 0)
     AvatarCorner.Parent = Avatar
     
-    -- Загрузка аватарки
     local player = Players.LocalPlayer
     local userId = player.UserId
-    local thumbnailType = Enum.ThumbnailType.Headshot -- или Enum.ThumbnailType.AvatarBust для бюста
-    local thumbnailSize = Enum.ThumbnailSize.Size48x48 -- можно изменить на Size150x150
-    local content, isReady = Players:GetUserThumbnailAsync(userId, thumbnailType, thumbnailSize)
+    local content, isReady = Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.Headshot, Enum.ThumbnailSize.Size48x48)
     if isReady then
         Avatar.Image = content
     end
     
-    -- Кнопка минимизации
     local MinimizeButton = Instance.new("TextButton")
     MinimizeButton.Size = UDim2.new(0, 30, 0, 30)
     MinimizeButton.Position = UDim2.new(1, -70, 0, 10)
@@ -203,7 +189,6 @@ function UltimateOrionLib:MakeWindow(options)
         MainFrame.Size = minimized and UDim2.new(0, 600, 0, 50) or UDim2.new(0, 600, 0, 450)
     end)
     
-    -- Кнопка закрытия
     local CloseButton = Instance.new("TextButton")
     CloseButton.Size = UDim2.new(0, 30, 0, 30)
     CloseButton.Position = UDim2.new(1, -30, 0, 10)
@@ -222,7 +207,6 @@ function UltimateOrionLib:MakeWindow(options)
         ScreenGui:Destroy()
     end)
     
-    -- Контейнер вкладок
     local TabHolder = Instance.new("Frame")
     TabHolder.Size = UDim2.new(0, 140, 1, -50)
     TabHolder.Position = UDim2.new(0, 0, 0, 50)
@@ -239,14 +223,12 @@ function UltimateOrionLib:MakeWindow(options)
     TabList.Padding = UDim.new(0, 5)
     TabList.Parent = TabScrolling
     
-    -- Контейнер контента
     local PageHolder = Instance.new("Frame")
     PageHolder.Size = UDim2.new(1, -140, 1, -50)
     PageHolder.Position = UDim2.new(0, 140, 0, 50)
     PageHolder.BackgroundTransparency = 1
     PageHolder.Parent = MainFrame
     
-    -- Сохранение конфигов (если включено)
     local ConfigStore
     if SaveConfig then
         ConfigStore = DataStoreService:GetDataStore(ConfigFolder)
@@ -269,13 +251,12 @@ function UltimateOrionLib:MakeWindow(options)
     
     Window:LoadFlags()
     
-    -- Функция создания таба
     function Window:MakeTab(options)
         local TabName = options.Name or "Tab"
         local TabIcon = options.Icon or "layout"
         local PremiumOnly = options.PremiumOnly or false
         
-        if PremiumOnly then return end -- если премиум, пропустить
+        if PremiumOnly then return end
         
         local TabButton = Instance.new("TextButton")
         TabButton.Size = UDim2.new(1, 0, 0, 40)
@@ -326,7 +307,6 @@ function UltimateOrionLib:MakeWindow(options)
         PagePadding.PaddingBottom = UDim.new(0, 10)
         PagePadding.Parent = TabPage
         
-        -- Выбор таба
         local function SelectTab()
             for _, page in ipairs(PageHolder:GetChildren()) do
                 if page:IsA("ScrollingFrame") then page.Visible = false end
@@ -342,11 +322,10 @@ function UltimateOrionLib:MakeWindow(options)
         
         TabButton.MouseButton1Click:Connect(SelectTab)
         
-        if #TabScrolling:GetChildren() == 1 then SelectTab() end -- первая таба активна
+        if #TabScrolling:GetChildren() == 1 then SelectTab() end
         
         local Tab = {}
         
-        -- Button
         function Tab:AddButton(options)
             local Name = options.Name or "Button"
             local Callback = options.Callback or function() end
@@ -373,7 +352,6 @@ function UltimateOrionLib:MakeWindow(options)
             Button.MouseButton1Click:Connect(Callback)
         end
         
-        -- Toggle
         function Tab:AddToggle(options)
             local Name = options.Name or "Toggle"
             local Default = options.Default or false
@@ -440,7 +418,6 @@ function UltimateOrionLib:MakeWindow(options)
             return Toggle
         end
         
-        -- Slider
         function Tab:AddSlider(options)
             local Name = options.Name or "Slider"
             local Min = options.Min or 0
@@ -538,7 +515,6 @@ function UltimateOrionLib:MakeWindow(options)
             return Slider
         end
         
-        -- Dropdown
         function Tab:AddDropdown(options)
             local Name = options.Name or "Dropdown"
             local Default = options.Default or ""
@@ -649,7 +625,6 @@ function UltimateOrionLib:MakeWindow(options)
             return Dropdown
         end
         
-        -- Keybind
         function Tab:AddBind(options)
             local Name = options.Name or "Keybind"
             local Default = options.Default or Enum.KeyCode.Unknown
@@ -730,7 +705,6 @@ function UltimateOrionLib:MakeWindow(options)
             return Bind
         end
         
-        -- ColorPicker
         function Tab:AddColorpicker(options)
             local Name = options.Name or "ColorPicker"
             local Default = options.Default or Color3.fromRGB(255, 255, 255)
@@ -769,7 +743,6 @@ function UltimateOrionLib:MakeWindow(options)
             local color = Default
             Window.Flags[Name] = color
             
-            -- Простой пикер (без полного HSV, но с рандомом для примера)
             local PickBtn = Instance.new("TextButton")
             PickBtn.Size = UDim2.new(1, 0, 1, 0)
             PickBtn.BackgroundTransparency = 1
@@ -777,7 +750,6 @@ function UltimateOrionLib:MakeWindow(options)
             PickBtn.Parent = Picker
             
             PickBtn.MouseButton1Click:Connect(function()
-                -- Здесь можно добавить полный пикер, но для простоты рандом
                 color = Color3.fromRGB(math.random(0,255), math.random(0,255), math.random(0,255))
                 PickPreview.BackgroundColor3 = color
                 Window.Flags[Name] = color
@@ -788,7 +760,6 @@ function UltimateOrionLib:MakeWindow(options)
             return Picker
         end
         
-        -- Textbox
         function Tab:AddTextbox(options)
             local Name = options.Name or "Textbox"
             local Default = options.Default or ""
@@ -827,7 +798,6 @@ function UltimateOrionLib:MakeWindow(options)
             return TextInput
         end
         
-        -- Paragraph
         function Tab:AddParagraph(title, content)
             local Para = Instance.new("Frame")
             Para.Size = UDim2.new(1, 0, 0, 60)
@@ -857,7 +827,6 @@ function UltimateOrionLib:MakeWindow(options)
             ParaContent.Parent = Para
         end
         
-        -- Label
         function Tab:AddLabel(text)
             local Label = Instance.new("TextLabel")
             Label.Size = UDim2.new(1, 0, 0, 30)
